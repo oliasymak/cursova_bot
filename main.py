@@ -11,14 +11,7 @@ import time
 # Create a SQLAlchemy model for the table in the database
 Base = declarative_base()
 
-class User(Base):
-    __tablename__ = 'users'
-    id = Column(Integer, primary_key=True)
-    chat_id = Column(Integer)
-    username = Column(String)
-    first_name = Column(String)
-    last_name = Column(String)
-    barcode_image = Column(LargeBinary)
+
 
 # Connect to the PostgreSQL database
 DATABASE_URL = 'postgresql://postgres:240702@localhost:5432/telegram_bot'  # Replace with your database connection URL
@@ -129,6 +122,8 @@ def callback_register(call):
         remove_user(call.message.chat.id)
         bot.send_message(call.message.chat.id, "Ваші дані успішно видалені")
     elif call.data == "actual_today":
+        bot.send_message(call.message.chat.id, "Cуп дня: \nсочевичний крем-суп 🍵")
+        bot.send_message(call.message.chat.id, "Комбо пропозиція\n 1 + 1 = 3 на будь-яку пасту 🤩")
 
 
 
@@ -163,8 +158,11 @@ def user_choose(message):
             bot.send_message(message.chat.id, "Вашa карта лояльності\n", reply_markup=keyboard)
             send_saved_barcode(message.chat.id)
 
-    elif message.text == 'Актуальні пропозиції':
-        pass
+    elif message.text == 'Персональні пропозиції':
+        if check_user_in_database(message.chat.id):
+            bot.send_message(message.chat.id, "Вашa персональна знижка 3%\n")
+        else:
+            bot.send_message(message.chat.id, "Зареєструйтесь в програмі лояльності\n")
 
 
 
