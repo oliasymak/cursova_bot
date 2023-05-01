@@ -17,4 +17,4 @@ class Reservation(Base):
     amount_sits = Column(Integer)
     user_name = Column(String)
     tel_number = Column(String)
-    hours = Column(LargeBinary)
+    hours = Column(String)

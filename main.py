@@ -11,7 +11,25 @@ import time
 # Create a SQLAlchemy model for the table in the database
 Base = declarative_base()
 
+class User(Base):
+    __tablename__ = 'users'
+    id = Column(Integer, primary_key=True)
+    chat_id = Column(Integer)
+    username = Column(String)
+    first_name = Column(String)
+    last_name = Column(String)
+    phone_number = Column(String)
+    barcode_image = Column(LargeBinary)
 
+
+class Reservation(Base):
+    __tablename__ = 'reservation'
+    id = Column(Integer, primary_key=True)
+    table_id = Column(Integer)
+    amount_sits = Column(Integer)
+    user_name = Column(String)
+    tel_number = Column(String)
+    hours = Column(String)
 
 # Connect to the PostgreSQL database
 DATABASE_URL = 'postgresql://postgres:240702@localhost:5432/telegram_bot'  # Replace with your database connection URL
@@ -108,16 +126,11 @@ def send_saved_barcode(chat_id):
 @bot.callback_query_handler(func=lambda call: True)
 def callback_register(call):
     if call.data == "register":
-        barcode_bytes = generate_personal_barcode(call.message.chat.id)
-        user = User(chat_id=call.message.chat.id,
-                    username=call.message.from_user.username,
-                    first_name=call.message.from_user.first_name,
-                    last_name=call.message.from_user.last_name,
-                    barcode_image=barcode_bytes.getvalue())
-        session.merge(user)
-        session.commit()
-        bot.send_message(call.message.chat.id, "Ви успішно зареєстровані в нашій системі лояльності")
-        bot.send_photo(chat_id=call.message.chat.id, photo=barcode_bytes.getvalue())
+        bot.send_message(call.message.chat.id, "Як я можу до вас звертатись?\nНапишіть 'Мене звати' та вкажіть своє ім'я")
+
+
+        #bot.send_message(call.message.chat.id, "Ви успішно зареєстровані в нашій системі")
+        #bot.send_photo(chat_id=call.message.chat.id, photo=barcode_bytes.getvalue())
     elif call.data == "delete_data":
         remove_user(call.message.chat.id)
         bot.send_message(call.message.chat.id, "Ваші дані успішно видалені")
@@ -125,7 +138,7 @@ def callback_register(call):
         bot.send_message(call.message.chat.id, "Cуп дня: \nсочевичний крем-суп 🍵")
         bot.send_message(call.message.chat.id, "Комбо пропозиція\n 1 + 1 = 3 на будь-яку пасту 🤩")
 
-
+user_data_dict = {}
 
 @bot.message_handler(content_types=['text'])
 def user_choose(message):
@@ -163,13 +176,49 @@ def user_choose(message):
             bot.send_message(message.chat.id, "Вашa персональна знижка 3%\n")
         else:
             bot.send_message(message.chat.id, "Зареєструйтесь в програмі лояльності\n")
+    elif message.text[0: 10] == 'Мене звати':
+        first_name = message.text[10:]
+        user_data_dict["first_name"] = first_name
+        bot.send_message(message.chat.id, "Напишіть 'Моє прізвище' та вкажіть своє прізвище\n")
+        # user = session.query(User).filter(User.id == message.chat.id).one()
+        # print(user)
+        # user.username = user_name
+    elif message.text[0:len('Моє прізвище')] == 'Моє прізвище':
+        last_name = message.text[len('Моє прізвище')+1:]
+        user_data_dict["last_name"] = last_name
+        print(user_data_dict)
+        markup = types.ReplyKeyboardMarkup(one_time_keyboard=True)
+        phone_button = types.KeyboardButton(text="Поділитись номером", request_contact=True)
+        markup.add(phone_button)
+        bot.send_message(message.chat.id, "Для завершення реєстрації мені потрібен ваш номер телефону\n", reply_markup=markup)
+    else:
+        bot.send_message(message.chat.id, "Я вас не розумію(")
+
+@bot.message_handler(content_types=['contact'])
+def handle_contact(message):
+    phone_number = message.contact.phone_number
+    print(type(phone_number))
+    barcode_bytes = generate_personal_barcode(message.chat.id)
+    user = User(chat_id=message.chat.id,
+                username=message.from_user.username,
+                first_name=user_data_dict["first_name"],
+                last_name=user_data_dict["last_name"],
+                phone_number=phone_number,
+                barcode_image=barcode_bytes.getvalue())
+    session.merge(user)
+    session.commit()
+
+    bot.send_message(message.chat.id, "Ви успішно зареєстровані в нашій системі")
+    bot.send_photo(chat_id=message.chat.id, photo=barcode_bytes.getvalue())
+    #bot.reply_to(message, f"Thanks for sharing your phone number: {phone_number}")
 
 
 
 
-users = session.query(User).all()
-for user in users:
-    print("ID: {}, Chat ID: {}, Username: {}, First Name: {}, Last Name: {}, Barcode: {}".format(
-        user.id, user.chat_id, user.username, user.first_name, user.last_name, user.barcode_image))
+
+# users = session.query(User).all()
+# for user in users:
+#     print("ID: {}, Chat ID: {}, Username: {}, First Name: {}, Last Name: {}, Barcode: {}".format(
+#         user.id, user.chat_id, user.username, user.first_name, user.last_name, user.barcode_image))
 
 bot.polling(none_stop=True)
