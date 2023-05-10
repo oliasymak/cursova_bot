@@ -1,11 +1,12 @@
 import telebot
 from telebot import types
-from sqlalchemy import create_engine, Column, Integer, String, LargeBinary
+from sqlalchemy import create_engine, Column, Integer, String, LargeBinary, Boolean, DateTime
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import barcode
 from barcode import Code128
 import io
+import itertools
 
 import time
 # Create a SQLAlchemy model for the table in the database
@@ -20,7 +21,7 @@ class User(Base):
     last_name = Column(String)
     phone_number = Column(String)
     barcode_image = Column(LargeBinary)
-
+    time = Column(DateTime)
 
 class Reservation(Base):
     __tablename__ = 'reservation'
@@ -29,7 +30,7 @@ class Reservation(Base):
     amount_sits = Column(Integer)
     user_name = Column(String)
     tel_number = Column(String)
-    hours = Column(String)
+    availability = Column(Boolean)
 
 # Connect to the PostgreSQL database
 DATABASE_URL = 'postgresql://postgres:240702@localhost:5432/telegram_bot'  # Replace with your database connection URL
@@ -137,7 +138,41 @@ def callback_register(call):
     elif call.data == "actual_today":
         bot.send_message(call.message.chat.id, "Cуп дня: \nсочевичний крем-суп 🍵")
         bot.send_message(call.message.chat.id, "Комбо пропозиція\n 1 + 1 = 3 на будь-яку пасту 🤩")
+    elif call.data == "main":
+        bot.reply_to(call.message, "Слава Україні!🇺🇦 \nЦей телеграм бот - твій гід у ресторані!\n\n"
+                              "Тут ти можеш ознайомитись з меню, з персональними пропозиціями, скористатись системою лояльності,\n"
+                              "забронювати стіл та багато іншого 😉")
+        markup_reply = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        key_reservation = types.KeyboardButton('Забронювати стіл')
+        key_menu = types.KeyboardButton('Меню')
+        key_loyalty = types.KeyboardButton('Карта лояльності')
+        key_proposal = types.KeyboardButton('Персональні пропозиції')
+        markup_reply.add(key_reservation, key_menu, key_loyalty, key_proposal)
+        bot.send_message(call.message.chat.id, text="Обери дію 👇🏻", reply_markup=markup_reply)
 
+def reserve_table(num_guests, available_tables):
+    if sum(available_tables) > num_guests:
+        while num_guests < num_guests + 4:
+            # Define a list to store the reserved tables
+            reserved_tables = []
+
+            # Loop through the available tables and find a suitable combination
+            for i in range(1, len(available_tables) + 1):
+                for table_combination in itertools.combinations(available_tables, i):
+                    if sum(table_combination) == num_guests:
+                        reserved_tables.append(sorted(list(table_combination)))
+            unique_lists = []
+            for lst in reserved_tables:
+                if lst not in unique_lists:
+                    unique_lists.append(lst)
+
+            if len(unique_lists) > 0:
+                break
+            else:
+                num_guests += 1
+        return unique_lists
+    else:
+        return []
 user_data_dict = {}
 
 @bot.message_handler(content_types=['text'])
@@ -154,7 +189,14 @@ def user_choose(message):
             # Send the image to the chat
             bot.send_photo(chat_id=message.chat.id, photo=photo)
     elif message.text == 'Забронювати стіл':
-        pass
+        if not check_user_in_database(message.chat.id):
+            keyboard = types.InlineKeyboardMarkup()
+            key_register = types.InlineKeyboardButton(text='Зареєструватись',
+                                                       callback_data='register')
+            keyboard.add(key_register)
+            bot.send_message(message.chat.id, "Ви не зареєстровані в нашій системі\n", reply_markup=keyboard)
+        else:
+            bot.send_message(message.chat.id, "Вкажіть кількість осіб (макс. 15)\nНапишіть 'Кількість'")
     elif message.text == 'Карта лояльності':
         if not check_user_in_database(message.chat.id):
             keyboard = types.InlineKeyboardMarkup()
@@ -176,8 +218,8 @@ def user_choose(message):
             bot.send_message(message.chat.id, "Вашa персональна знижка 3%\n")
         else:
             bot.send_message(message.chat.id, "Зареєструйтесь в програмі лояльності\n")
-    elif message.text[0: 10] == 'Мене звати':
-        first_name = message.text[10:]
+    elif message.text[0: len('Мене звати')] == 'Мене звати':
+        first_name = message.text[len('Мене звати') + 1:]
         user_data_dict["first_name"] = first_name
         bot.send_message(message.chat.id, "Напишіть 'Моє прізвище' та вкажіть своє прізвище\n")
         # user = session.query(User).filter(User.id == message.chat.id).one()
@@ -191,6 +233,19 @@ def user_choose(message):
         phone_button = types.KeyboardButton(text="Поділитись номером", request_contact=True)
         markup.add(phone_button)
         bot.send_message(message.chat.id, "Для завершення реєстрації мені потрібен ваш номер телефону\n", reply_markup=markup)
+    elif message.text[0: len('Кількість')] == 'Кількість':
+        global num_guests
+        num_guests = message.text[len('Кількість') + 1:]
+        if num_guests > 15:
+            bot.send_message(message.chat.id, "На жаль, ми не можемо забронювати стіл на таку кількість гостей")
+        else:
+            bot.send_message(message.chat.id, "Вкажіть годину\nНапишіть наприклад 'Час 17:00'")
+    elif message.text[0: len('Час')] =='Час':
+        time = message.text[len('Час') + 1:]
+        reservations = session.query(Reservation).filter_by(availability=True).all()
+        reservation_list = [reservation for reservation in reservations]
+        reserved_tables = reserve_table(num_guests, )
+
     else:
         bot.send_message(message.chat.id, "Я вас не розумію(")
 
@@ -207,10 +262,13 @@ def handle_contact(message):
                 barcode_image=barcode_bytes.getvalue())
     session.merge(user)
     session.commit()
-
-    bot.send_message(message.chat.id, "Ви успішно зареєстровані в нашій системі")
+    keyboard = types.InlineKeyboardMarkup()
+    key_main = types.InlineKeyboardButton(text='Головне меню',
+                                                 callback_data='main')
+    keyboard.add(key_main)
+    bot.send_message(message.chat.id, "Ви успішно зареєстровані в нашій системі",reply_markup=keyboard)
     bot.send_photo(chat_id=message.chat.id, photo=barcode_bytes.getvalue())
-    #bot.reply_to(message, f"Thanks for sharing your phone number: {phone_number}")
+
 
 
 
